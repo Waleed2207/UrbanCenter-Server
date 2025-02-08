@@ -22,11 +22,19 @@ exports.createReport = {
   async CreateReport(req, res) {
     try {
       const { user_id, category, subcategory, description, location_lat, location_long, priority } = req.body;
-      // const io = req.io; 
+      const io = req.io; 
+      const onlineUsers = req.onlineUsers;
 
       if (!REPORT_CATEGORIES[category] || !REPORT_CATEGORIES[category].includes(subcategory)) {
         return res.status(400).json({ error: "Invalid category-subcategory combination" });
       }
+
+      // ✅ Fetch the citizen's username
+      const user = await User.findById(user_id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      const citizen_name = user.username;
 
       let image_url = null;
 
@@ -51,6 +59,7 @@ exports.createReport = {
 
       const newReport = new Report({
         user_id,
+        citizen_name,
         category,
         subcategory,
         description,
@@ -61,7 +70,14 @@ exports.createReport = {
       });
 
       await newReport.save();
-      // io.emit("reportAdded", newReport); 
+      // ✅ Emit event to notify authorities in the category
+      const authorities = await User.find({ role: "authority", related_category: category });
+      authorities.forEach((authority) => {
+        const socketId = onlineUsers.get(authority._id.toString());
+        if (socketId) {
+          io.to(socketId).emit("reportAdded", { ...newReport.toObject(), citizen_name });
+        }
+      });
       res.status(200).json({ message: 'Report created successfully', report: newReport });
     } catch (err) {
       res.status(500).json({ error: 'Failed to create report', details: err.message });
@@ -217,15 +233,17 @@ exports.createReport = {
       try {
         const { id } = req.params;
         const { user_id, category, description,subcategory, location_lat, location_long, priority, status } = req.body;
-        // const io = req.io;
+        const io = req.io;
+        const onlineUsers = req.onlineUsers;
 
-        const report = await Report.findById(id);
+        let report = await Report.findById(id).populate("user_id", "username"); // ✅ Include citizen_name
         if (!report) {
           return res.status(404).json({ error: 'Report not found' });
         }
         if (!REPORT_CATEGORIES[category] || !REPORT_CATEGORIES[category].includes(subcategory)) {
           return res.status(400).json({ error: "Invalid category-subcategory combination" });
         }
+        let citizen_name = report.user_id?.username || "Unknown"; // ✅ Get citizen_name
         let image_url = report.image_url;
         let imageUpdated = false;
     
@@ -288,8 +306,15 @@ exports.createReport = {
         if (image_url) report.image_url = image_url;
     
         await report.save();
-        // io.emit("reportUpdated", report);
-        res.status(200).json({ message: 'Report updated successfully', report });
+        // ✅ Notify authorities in the category
+        const authorities = await User.find({ role: "authority", related_category: category });
+        authorities.forEach((authority) => {
+          const socketId = onlineUsers.get(authority._id.toString());
+          if (socketId) {
+            io.to(socketId).emit("reportUpdated", { ...report.toObject(), citizen_name });
+          }
+        });
+      res.status(200).json({ message: 'Report updated successfully', report });
       } catch (err) {
         res.status(500).json({ error: 'Failed to update report', details: err.message });
       }
@@ -298,20 +323,27 @@ exports.createReport = {
       try {
         const { id } = req.params;
         const { status } = req.body;
-        // const io = req.io;
-
+        const io = req.io;
+        const onlineUsers = req.onlineUsers;
+    
         // ✅ Validate status
         const validStatuses = ["pending", "in_progress", "resolved"];
         if (!validStatuses.includes(status)) {
           return res.status(400).json({ error: "Invalid status value" });
         }
     
-        // ✅ Find the report
-        const report = await Report.findById(id);
-        console.log(report);
+        // ✅ Find the report and populate the user who created it
+        const report = await Report.findById(id).populate("user_id", "username");
         if (!report) {
           return res.status(404).json({ error: "Report not found" });
         }
+    
+        const citizenId = report.user_id?._id.toString(); // Ensure user_id exists and convert to string
+        if (!citizenId) {
+          return res.status(500).json({ error: "Citizen ID not found for this report" });
+        }
+    
+        const citizenSocketId = onlineUsers.get(citizenId); // ✅ Properly fetch citizen's socket ID
     
         // ✅ Ensure only authorities can update status
         const user = await User.findById(req.user._id);
@@ -323,38 +355,86 @@ exports.createReport = {
         report.status = status;
         report.updated_at = moment().tz("Asia/Jerusalem").toDate(); // Update timestamp
         await report.save();
-        // io.emit("reportUpdated", report);
+    
+        // ✅ Notify the citizen via WebSockets if they are online
+        if (citizenSocketId) {
+          io.to(citizenSocketId).emit("reportUpdated", {
+            report_id: id,
+            status: report.status || "N/A",
+            category: report.category || "Unknown Category",
+            subcategory: report.subcategory || "Unknown Subcategory",
+            description: report.description || "No description provided",
+            priority: report.priority || "Not specified",
+            location_lat: report.location_lat || "N/A",
+            location_long: report.location_long || "N/A",
+            citizen_id: citizenId, // ✅ Include citizen ID for frontend filtering
+            citizen_name: report.user_id.username || "Unknown",
+          });
+        } else {
+          console.warn(`🚨 Citizen ${citizenId} is not online, skipping socket notification.`);
+        }
+    
         res.status(200).json({ message: "Report status updated successfully", report });
       } catch (err) {
+        console.error("🚨 Error updating report status:", err);
         res.status(500).json({ error: "Failed to update report status", details: err.message });
       }
     },
+    
     async deleteReport(req, res) {
       try {
         const { id } = req.params;
-        // const io = req.io;
-
-        const report = await Report.findById(id);
+        const io = req.io;
+        const onlineUsers = req.onlineUsers;
+    
+        // ✅ Find the report and include `citizen_name`
+        const report = await Report.findById(id).populate("user_id", "username");
+    
         if (!report) {
-          return res.status(404).json({ error: 'Report not found' });
+          return res.status(404).json({ error: "Report not found" });
         }
-  
+    
+        const citizen_name = report.user_id?.username || "Unknown";
+    
+        // ✅ Delete the image from AWS S3 if it exists
         if (report.image_url) {
-          const fileName = report.image_url.split('/').pop();
-          await s3.send(
-            new DeleteObjectCommand({
-              Bucket: process.env.S3_BUCKET_NAME,
-              Key: fileName,
-            })
-          );
+          try {
+            const fileName = report.image_url.split('/').pop();
+            await s3.send(
+              new DeleteObjectCommand({
+                Bucket: process.env.S3_BUCKET_NAME,
+                Key: fileName,
+              })
+            );
+          } catch (s3Error) {
+            console.error("S3 Deletion Error:", s3Error);
+          }
         }
-  
+    
+        // ✅ Delete the report from MongoDB
         await report.deleteOne();
-        // io.emit("reportDeleted", id); 
-        res.status(200).json({ message: 'Report deleted successfully' });
+    
+        // ✅ Notify authorities in the category
+        const authorities = await User.find({ role: "authority", related_category: report.category });
+    
+        authorities.forEach((authority) => {
+          const socketId = onlineUsers.get(authority._id.toString());
+          if (socketId) {
+            io.to(socketId).emit("reportDeleted", {
+              report_id: id,
+              category: report.category,
+              citizen_name: citizen_name
+            });
+          }
+        });
+    
+        res.status(200).json({ message: "Report deleted successfully", deletedReport: { report_id: id, citizen_name } });
+    
       } catch (err) {
-        res.status(500).json({ error: 'Failed to delete report', details: err.message });
+        console.error("Error deleting report:", err);
+        res.status(500).json({ error: "Failed to delete report", details: err.message });
       }
-    },
+    }
+    
   };
   

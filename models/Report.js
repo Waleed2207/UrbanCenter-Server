@@ -40,6 +40,15 @@ const reportSchema = new mongoose.Schema({
   },
 });
 
+// Virtual field to get the citizen's name from `user_id`
+reportSchema.virtual("citizen_name", {
+  ref: "User",
+  localField: "user_id",
+  foreignField: "_id",
+  justOne: true,
+  options: { select: "username" }, // Fetch only `username`
+});
+
 // Auto-update `updated_at`
 reportSchema.pre("save", function (next) {
   this.updated_at = moment().tz("Asia/Jerusalem").toDate();
