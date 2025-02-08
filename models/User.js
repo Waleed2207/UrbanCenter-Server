@@ -40,6 +40,18 @@ const UserSchema = new mongoose.Schema({
     enum: ['citizen', 'authority'],
     required: true,
   },
+  phone_number: {
+    type: String,
+    required: function () {
+      return this.role === 'citizen';
+    },
+    validate: {
+      validator: function (v) {
+        return /^\d{10,15}$/.test(v); // Ensures phone number is valid
+      },
+      message: props => `${props.value} is not a valid phone number!`
+    }
+  },
   related_category: {
     type: String,
     enum: Object.keys(REPORT_CATEGORIES),
@@ -68,6 +80,9 @@ UserSchema.pre('save', async function (next) {
 });
 
 UserSchema.pre('validate', function (next) {
+  if (this.role === 'authority' && this.phone_number) {
+    return next(new Error('Authority users cannot have a phone number.'));
+  }
   if (this.role === 'authority' && !this.related_category) {
     return next(new Error('Authority users must have a related category.'));
   }

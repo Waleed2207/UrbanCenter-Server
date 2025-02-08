@@ -87,7 +87,14 @@ io.on("connection", (socket) => {
     onlineUsers.set(userId, socket.id);
     console.log(`📡 User ${userId} registered with socket ID ${socket.id}`);
   });
-
+  socket.on("sendMessage", (data) => {
+    const { recipientId, message } = data;
+    const recipientSocketId = onlineUsers.get(recipientId);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit("receiveMessage", { message, from: socket.id });
+      console.log(`📨 Message sent to ${recipientId}`);
+    }
+  });
   socket.on("disconnect", () => {
     for (let [userId, socketId] of onlineUsers.entries()) {
       if (socketId === socket.id) {

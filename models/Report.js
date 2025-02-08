@@ -48,7 +48,13 @@ reportSchema.virtual("citizen_name", {
   justOne: true,
   options: { select: "username" }, // Fetch only `username`
 });
-
+reportSchema.virtual("phone_number", {
+  ref: "User",
+  localField: "user_id",
+  foreignField: "_id",
+  justOne: true,
+  options: { select: "phone_number" }, // Fetch only `phone_number`
+});
 // Auto-update `updated_at`
 reportSchema.pre("save", function (next) {
   this.updated_at = moment().tz("Asia/Jerusalem").toDate();

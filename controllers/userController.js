@@ -7,7 +7,7 @@ const { REPORT_CATEGORIES } = require('../models/Report'); // Import category li
 exports.usersController = {
     async registerUser(req, res) {
         try {
-          const { username, email, password, role, related_category } = req.body;
+          const { username, email, password, role, related_category, phone_number } = req.body;
       
           // Check for required fields
           if (!username || !email || !password || !role) {
@@ -21,8 +21,13 @@ exports.usersController = {
             if (!Object.keys(REPORT_CATEGORIES).includes(related_category)) {
               return res.status(400).json({ error: 'Invalid related category' });
             }
-          } else if (role === 'citizen' && related_category) {
-            return res.status(400).json({ error: 'Citizen users cannot have a related category' });
+          }  else if (role === 'citizen') {
+            if (related_category) {
+              return res.status(400).json({ error: 'Citizen users cannot have a related category' });
+            }
+            if (!phone_number) {
+              return res.status(400).json({ error: 'Citizen users must have a phone number' });
+            }
           }
           // Check if the user already exists
           const existingUser = await User.findOne({ email });
@@ -37,6 +42,7 @@ exports.usersController = {
             email,
             password, // Do not hash the password here
             role,
+            phone_number: role === 'citizen' ? phone_number : undefined,
             related_category: role === 'authority' ? related_category : undefined,
           });
       
@@ -105,6 +111,7 @@ exports.usersController = {
         email: user.email,
         role: user.role,
         related_category: user.role === 'authority' ? user.related_category : undefined,
+        phone_number: user.phone_number
       };
   
       res.status(200).json({

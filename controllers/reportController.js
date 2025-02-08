@@ -35,6 +35,8 @@ exports.createReport = {
         return res.status(404).json({ error: "User not found" });
       }
       const citizen_name = user.username;
+      const phone_number = user.phone_number;
+
 
       let image_url = null;
 
@@ -60,6 +62,7 @@ exports.createReport = {
       const newReport = new Report({
         user_id,
         citizen_name,
+        phone_number,
         category,
         subcategory,
         description,
@@ -75,7 +78,7 @@ exports.createReport = {
       authorities.forEach((authority) => {
         const socketId = onlineUsers.get(authority._id.toString());
         if (socketId) {
-          io.to(socketId).emit("reportAdded", { ...newReport.toObject(), citizen_name });
+          io.to(socketId).emit("reportAdded", { ...newReport.toObject(), citizen_name, phone_number });
         }
       });
       res.status(200).json({ message: 'Report created successfully', report: newReport });
@@ -171,8 +174,9 @@ exports.createReport = {
         }
     
         // Get reports related to the user's assigned category
-        const reports = await Report.find({ category: user.related_category });
-    
+        const reports = await Report.find({ category: user.related_category })
+        .populate("user_id", "username phone_number"); // ✅ Populate phone_number
+      
         if (reports.length === 0) {
           return res.status(404).json({ message: "No reports found for this category" });
         }
@@ -180,6 +184,8 @@ exports.createReport = {
         // Convert timestamps to local timezone
         const localReports = reports.map(report => ({
           ...report.toObject(),
+          citizen_name: report.user_id?.username || "Unknown", // ✅ Add citizen_name
+          phone_number: report.user_id?.phone_number || "N/A",
           created_at: moment(report.created_at).tz('Asia/Jerusalem').format('YYYY-MM-DD HH:mm:ss'),
           updated_at: moment(report.updated_at).tz('Asia/Jerusalem').format('YYYY-MM-DD HH:mm:ss')
         }));
@@ -244,6 +250,7 @@ exports.createReport = {
           return res.status(400).json({ error: "Invalid category-subcategory combination" });
         }
         let citizen_name = report.user_id?.username || "Unknown"; // ✅ Get citizen_name
+        let phone_number = report.user_id?.phone_number || "N/A";
         let image_url = report.image_url;
         let imageUpdated = false;
     
@@ -369,6 +376,8 @@ exports.createReport = {
             location_long: report.location_long || "N/A",
             citizen_id: citizenId, // ✅ Include citizen ID for frontend filtering
             citizen_name: report.user_id.username || "Unknown",
+            phone_number: report.user_id?.phone_number || "N/A",
+
           });
         } else {
           console.warn(`🚨 Citizen ${citizenId} is not online, skipping socket notification.`);
@@ -395,7 +404,8 @@ exports.createReport = {
         }
     
         const citizen_name = report.user_id?.username || "Unknown";
-    
+        const phone_number= report.user_id?.phone_number || "N/A";
+
         // ✅ Delete the image from AWS S3 if it exists
         if (report.image_url) {
           try {
@@ -423,12 +433,13 @@ exports.createReport = {
             io.to(socketId).emit("reportDeleted", {
               report_id: id,
               category: report.category,
-              citizen_name: citizen_name
+              citizen_name: citizen_name,
+              phone_number: phone_number,
             });
           }
         });
     
-        res.status(200).json({ message: "Report deleted successfully", deletedReport: { report_id: id, citizen_name } });
+        res.status(200).json({ message: "Report deleted successfully", deletedReport: { report_id: id, citizen_name , phone_number} });
     
       } catch (err) {
         console.error("Error deleting report:", err);
