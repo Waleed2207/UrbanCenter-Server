@@ -4,6 +4,7 @@ const sharp = require('sharp');
 const crypto = require('crypto');
 const { Report, REPORT_CATEGORIES } = require('../models/Report');
 const User = require('../models/User');
+const  Comment  = require('../models/Comment'); 
 const moment = require('moment-timezone'); // Import moment-timezone
 
 require('dotenv').config();
@@ -329,7 +330,7 @@ exports.createReport = {
     async updateReportStatus(req, res) {
       try {
         const { id } = req.params;
-        const { status } = req.body;
+        const { status, comment_text } = req.body;
         const io = req.io;
         const onlineUsers = req.onlineUsers;
     
@@ -339,8 +340,10 @@ exports.createReport = {
           return res.status(400).json({ error: "Invalid status value" });
         }
     
-        // ✅ Find the report and populate the user who created it
-        const report = await Report.findById(id).populate("user_id", "username");
+        // // ✅ Find the report and populate the user who created it
+        // const report = await Report.findById(id).populate("user_id", "username");
+        const report = await Report.findById(id)
+        .populate("user_id", "username phone_number");
         if (!report) {
           return res.status(404).json({ error: "Report not found" });
         }
@@ -357,12 +360,55 @@ exports.createReport = {
         if (!user || user.role !== "authority") {
           return res.status(403).json({ error: "Access denied. Only authority users can update report status." });
         }
+        let image_url = null;
+
+        // ✅ Check if an image was uploaded
+        if (req.file) {
+          console.log("🚀 File Received:", req.file); // Debugging log
     
+          // Resize the image using Sharp
+          const buffer = await sharp(req.file.buffer)
+            .resize({ height: 1920, width: 1080, fit: "contain" })
+            .toBuffer();
+    
+          const imageName = generateRandomImageName();
+    
+          const params = {
+            Bucket: process.env.S3_BUCKET_NAME,
+            Key: imageName,
+            Body: buffer,
+            ContentType: req.file.mimetype,
+          };
+    
+          await s3.send(new PutObjectCommand(params));
+    
+          image_url = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageName}`;
+          console.log("✅ Image Uploaded to S3:", image_url);
+        } else {
+          console.warn("⚠️ No file received in req.file");
+        }
+        const citizenName = report.user_id?.username || "Unknown";
+        const phoneNumber = report.user_id?.phone_number || "N/A";
+                // ✅ Save the comment with optional image
+        const updatedComment = await Comment.findOneAndUpdate(
+          { report_id: report._id, user_id: req.user._id },
+          {
+            comment_text: comment_text || `Status updated to ${status}`,
+            status,
+            category: report.category, // ✅ Save category
+            citizen_name: citizenName,
+            phone_number: phoneNumber, 
+            image_url,
+            timestamp: moment().tz("Asia/Jerusalem").toDate(),
+          },
+          { new: true, upsert: true }
+        );
+            
+
         // ✅ Update the report status
         report.status = status;
         report.updated_at = moment().tz("Asia/Jerusalem").toDate(); // Update timestamp
         await report.save();
-    
         // ✅ Notify the citizen via WebSockets if they are online
         if (citizenSocketId) {
           io.to(citizenSocketId).emit("reportUpdated", {

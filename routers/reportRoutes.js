@@ -16,7 +16,7 @@ reportRoutes.get('/report/:id', createReport.getSignedUrl);
 
 //PUT
 reportRoutes.put('/report/:id', upload.single('image'), createReport.updateReport);
-reportRoutes.put("/report/status/:id", authMiddleware ,createReport.updateReportStatus);
+reportRoutes.put("/report/status/:id", authMiddleware , upload.single('image'), createReport.updateReportStatus);
 
 //DELETE
 reportRoutes.delete('/report/:id', createReport.deleteReport);
