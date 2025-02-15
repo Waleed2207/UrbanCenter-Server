@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/static/css/main.18b9821b.css",
+    "main.js": "/static/js/main.cdfe5ab1.js",
+    "static/media/urban-city-logo.png": "/static/media/urban-city-logo.8ca49267494866eb9307.png",
+    "static/media/defult_image.gif": "/static/media/defult_image.c44849a8cfd482e00045.gif",
+    "index.html": "/index.html",
+    "main.18b9821b.css.map": "/static/css/main.18b9821b.css.map",
+    "main.cdfe5ab1.js.map": "/static/js/main.cdfe5ab1.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.18b9821b.css",
+    "static/js/main.cdfe5ab1.js"
+  ]
+}

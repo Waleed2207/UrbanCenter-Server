@@ -2,6 +2,8 @@
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
+const path = require('path');
+
 const { Server } = require("socket.io");
 const connectDB = require("./config");
 const bodyParser = require("body-parser");
@@ -56,11 +58,15 @@ io.on("connection", (socket) => {
   });
 });
 
+
 // ✅ Middleware
-app.use(cors());
-app.use(express.json());
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
+app.use(cors());
+
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'view/build')));
 
 // ✅ Attach WebSocket to requests
 app.use((req, res, next) => {
@@ -73,6 +79,10 @@ app.use((req, res, next) => {
 app.use("/api/users", userRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/comments", commentRoutes);
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend/build', 'index.html'));
+});
 
 // ✅ Error Handling
 app.use((req, res) => {
